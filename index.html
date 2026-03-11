@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Normal Map & Relighting</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0d0d0f;
+      color: #e0e0e0;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+    }
+
+    header {
+      padding: 20px 32px;
+      border-bottom: 1px solid #222;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    header h1 { font-size: 1.2rem; font-weight: 600; letter-spacing: 0.05em; color: #fff; }
+    header .badge {
+      font-size: 0.65rem;
+      background: #2a2aff44;
+      border: 1px solid #4466ff88;
+      color: #88aaff;
+      padding: 2px 8px;
+      border-radius: 99px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      gap: 0;
+      height: calc(100vh - 61px);
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      background: #111115;
+      border-right: 1px solid #222;
+      padding: 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .upload-zone {
+      border: 2px dashed #333;
+      border-radius: 10px;
+      padding: 28px 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+      position: relative;
+    }
+    .upload-zone:hover, .upload-zone.drag-over {
+      border-color: #4466ff;
+      background: #4466ff0a;
+    }
+    .upload-zone input[type=file] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+    }
+    .upload-icon { font-size: 2rem; margin-bottom: 8px; }
+    .upload-zone p { font-size: 0.78rem; color: #888; line-height: 1.5; }
+    .upload-zone p strong { color: #bbb; }
+
+    .section-label {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #555;
+      margin-bottom: 10px;
+    }
+
+    .control-group { display: flex; flex-direction: column; gap: 14px; }
+
+    .control {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .control label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.78rem;
+      color: #aaa;
+    }
+    .control label span { color: #6688ff; font-variant-numeric: tabular-nums; }
+
+    input[type=range] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 3px;
+      background: #2a2a35;
+      border-radius: 2px;
+      outline: none;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 13px; height: 13px;
+      border-radius: 50%;
+      background: #4466ff;
+      cursor: pointer;
+      transition: transform .1s;
+    }
+    input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.3); }
+
+    .light-sphere-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+    .light-sphere-wrap p { font-size: 0.72rem; color: #555; }
+    #lightSphere {
+      border-radius: 50%;
+      cursor: crosshair;
+      border: 2px solid #2a2a35;
+    }
+
+    .color-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .color-row label { font-size: 0.78rem; color: #aaa; flex: 1; }
+    input[type=color] {
+      width: 34px; height: 24px;
+      border: 1px solid #333;
+      border-radius: 5px;
+      background: none;
+      cursor: pointer;
+      padding: 1px 2px;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 9px;
+      border-radius: 7px;
+      border: none;
+      font-size: 0.82rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+      transition: opacity .15s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn-primary { background: #4466ff; color: #fff; }
+    .btn-ghost { background: #1e1e28; color: #aaa; border: 1px solid #2a2a35; }
+
+    /* ── Canvas area ── */
+    .canvas-area {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid #222;
+      background: #0d0d0f;
+    }
+    .tab {
+      padding: 12px 20px;
+      font-size: 0.8rem;
+      color: #666;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: color .15s, border-color .15s;
+      user-select: none;
+    }
+    .tab:hover { color: #bbb; }
+    .tab.active { color: #4466ff; border-bottom-color: #4466ff; }
+
+    .panels {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 1px;
+      background: #111;
+      overflow: hidden;
+    }
+    .panel {
+      background: #0d0d0f;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .panel-header {
+      padding: 8px 14px;
+      font-size: 0.7rem;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      border-bottom: 1px solid #1a1a20;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .panel-header .dl { font-size: 0.65rem; color: #4466ff; cursor: pointer; text-decoration: none; }
+    .panel-header .dl:hover { text-decoration: underline; }
+    .canvas-wrap {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      padding: 12px;
+    }
+    canvas.result {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      border-radius: 4px;
+    }
+    .empty-state {
+      text-align: center;
+      color: #333;
+      font-size: 0.8rem;
+      line-height: 2;
+    }
+
+    /* mode=single view */
+    .panels.single { grid-template-columns: 1fr; }
+    .panels.single .panel { display: none; }
+    .panels.single .panel.active-panel { display: flex; }
+
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; grid-template-rows: auto 1fr; height: auto; }
+      .sidebar { flex-direction: row; flex-wrap: wrap; height: auto; border-right: none; border-bottom: 1px solid #222; }
+      .panels { grid-template-columns: 1fr; }
+      .panel:not(:first-child) { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Normal Map &amp; Relighting</h1>
+  <span class="badge">Browser</span>
+</header>
+
+<div class="layout">
+  <!-- ── Sidebar ── -->
+  <aside class="sidebar">
+
+    <!-- Upload -->
+    <div>
+      <div class="section-label">Input Image</div>
+      <div class="upload-zone" id="uploadZone">
+        <input type="file" accept="image/*" id="fileInput" />
+        <div class="upload-icon">🖼️</div>
+        <p><strong>Drop an image here</strong><br/>or click to browse</p>
+      </div>
+    </div>
+
+    <!-- Light direction -->
+    <div>
+      <div class="section-label">Light Direction</div>
+      <div class="light-sphere-wrap">
+        <canvas id="lightSphere" width="120" height="120"></canvas>
+        <p>Drag to move light</p>
+      </div>
+    </div>
+
+    <!-- Normal map -->
+    <div>
+      <div class="section-label">Normal Map</div>
+      <div class="control-group">
+        <div class="control">
+          <label>Strength <span id="nmStrengthVal">4.0</span></label>
+          <input type="range" id="nmStrength" min="0.5" max="12" step="0.1" value="4.0" />
+        </div>
+        <div class="control">
+          <label>Blur radius <span id="nmBlurVal">0</span></label>
+          <input type="range" id="nmBlur" min="0" max="5" step="1" value="0" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Lighting -->
+    <div>
+      <div class="section-label">Lighting</div>
+      <div class="control-group">
+        <div class="control">
+          <label>Ambient <span id="ambientVal">0.15</span></label>
+          <input type="range" id="ambient" min="0" max="1" step="0.01" value="0.15" />
+        </div>
+        <div class="control">
+          <label>Diffuse <span id="diffuseVal">0.85</span></label>
+          <input type="range" id="diffuse" min="0" max="2" step="0.01" value="0.85" />
+        </div>
+        <div class="control">
+          <label>Specular <span id="specularVal">0.30</span></label>
+          <input type="range" id="specular" min="0" max="2" step="0.01" value="0.30" />
+        </div>
+        <div class="control">
+          <label>Shininess <span id="shininessVal">32</span></label>
+          <input type="range" id="shininess" min="1" max="256" step="1" value="32" />
+        </div>
+        <div class="color-row">
+          <label>Light color</label>
+          <input type="color" id="lightColor" value="#ffffff" />
+        </div>
+        <div class="color-row">
+          <label>Ambient color</label>
+          <input type="color" id="ambientColor" value="#1a2040" />
+        </div>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" id="processBtn" disabled>Generate</button>
+    <button class="btn btn-ghost" id="resetBtn">Reset</button>
+
+  </aside>
+
+  <!-- ── Canvas Area ── -->
+  <main class="canvas-area">
+    <div class="tabs">
+      <div class="tab active" data-view="split">All Views</div>
+      <div class="tab" data-view="original">Original</div>
+      <div class="tab" data-view="normalmap">Normal Map</div>
+      <div class="tab" data-view="relit">Relit</div>
+    </div>
+
+    <div class="panels" id="panels">
+      <div class="panel" id="panelOriginal">
+        <div class="panel-header">
+          Original
+        </div>
+        <div class="canvas-wrap">
+          <div class="empty-state" id="emptyOriginal">Upload an image to begin</div>
+          <canvas class="result" id="cvOriginal" style="display:none"></canvas>
+        </div>
+      </div>
+
+      <div class="panel" id="panelNormal">
+        <div class="panel-header">
+          Normal Map
+          <a class="dl" id="dlNormal" href="#" download="normal_map.png">↓ Save</a>
+        </div>
+        <div class="canvas-wrap">
+          <div class="empty-state" id="emptyNormal">Normal map will appear here</div>
+          <canvas class="result" id="cvNormal" style="display:none"></canvas>
+        </div>
+      </div>
+
+      <div class="panel" id="panelRelit">
+        <div class="panel-header">
+          Relit
+          <a class="dl" id="dlRelit" href="#" download="relit.png">↓ Save</a>
+        </div>
+        <div class="canvas-wrap">
+          <div class="empty-state" id="emptyRelit">Relit image will appear here</div>
+          <canvas class="result" id="cvRelit" style="display:none"></canvas>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+// ──────────────────────────────────────────────────────────
+// State
+// ──────────────────────────────────────────────────────────
+let srcImageData = null;  // original ImageData
+let normalMapData = null; // computed normal map ImageData
+let lightDir = { x: 0.3, y: -0.5, z: 0.8 }; // unit vector
+
+// ──────────────────────────────────────────────────────────
+// Light sphere UI
+// ──────────────────────────────────────────────────────────
+const sphereCanvas = document.getElementById('lightSphere');
+const sphereCtx = sphereCanvas.getContext('2d');
+const R = 56; // sphere radius in px
+const CX = 60, CY = 60;
+
+function normalizeLightDir() {
+  const len = Math.sqrt(lightDir.x**2 + lightDir.y**2 + lightDir.z**2);
+  lightDir.x /= len; lightDir.y /= len; lightDir.z /= len;
+}
+
+function drawSphere() {
+  normalizeLightDir();
+  const ctx = sphereCtx;
+  ctx.clearRect(0, 0, 120, 120);
+
+  // Sphere shading preview
+  const imageData = ctx.createImageData(120, 120);
+  for (let py = 0; py < 120; py++) {
+    for (let px = 0; px < 120; px++) {
+      const dx = (px - CX) / R;
+      const dy = (py - CY) / R;
+      const d2 = dx*dx + dy*dy;
+      if (d2 > 1) continue;
+      const dz = Math.sqrt(1 - d2);
+      const dot = Math.max(0, dx*lightDir.x + dy*lightDir.y + dz*lightDir.z);
+      const v = Math.round(40 + dot * 215);
+      const i = (py * 120 + px) * 4;
+      imageData.data[i]   = v;
+      imageData.data[i+1] = v;
+      imageData.data[i+2] = v;
+      imageData.data[i+3] = 255;
+    }
+  }
+  ctx.putImageData(imageData, 0, 0);
+
+  // Draw circle border
+  ctx.beginPath();
+  ctx.arc(CX, CY, R, 0, Math.PI * 2);
+  ctx.strokeStyle = '#2a2a40';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Draw light indicator dot
+  const dotX = CX + lightDir.x * R;
+  const dotY = CY + lightDir.y * R;
+  ctx.beginPath();
+  ctx.arc(dotX, dotY, 5, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffdd55';
+  ctx.fill();
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+}
+
+function spherePointerToDir(e) {
+  const rect = sphereCanvas.getBoundingClientRect();
+  const px = (e.clientX - rect.left) * (120 / rect.width);
+  const py = (e.clientY - rect.top)  * (120 / rect.height);
+  const dx = (px - CX) / R;
+  const dy = (py - CY) / R;
+  const d2 = dx*dx + dy*dy;
+  if (d2 > 1) return false;
+  const dz = Math.sqrt(1 - d2);
+  lightDir.x = dx;
+  lightDir.y = dy;
+  lightDir.z = dz;
+  normalizeLightDir();
+  return true;
+}
+
+let sphereDragging = false;
+sphereCanvas.addEventListener('pointerdown', e => {
+  if (spherePointerToDir(e)) {
+    sphereDragging = true;
+    sphereCanvas.setPointerCapture(e.pointerId);
+    drawSphere();
+    if (srcImageData) scheduleRelight();
+  }
+});
+sphereCanvas.addEventListener('pointermove', e => {
+  if (!sphereDragging) return;
+  if (spherePointerToDir(e)) {
+    drawSphere();
+    if (srcImageData) scheduleRelight();
+  }
+});
+sphereCanvas.addEventListener('pointerup', () => { sphereDragging = false; });
+
+drawSphere();
+
+// ──────────────────────────────────────────────────────────
+// Image upload
+// ──────────────────────────────────────────────────────────
+const fileInput = document.getElementById('fileInput');
+const uploadZone = document.getElementById('uploadZone');
+
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadZone.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f && f.type.startsWith('image/')) loadFile(f);
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) loadFile(fileInput.files[0]);
+});
+
+function loadFile(file) {
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const img = new Image();
+    img.onload = () => {
+      // Draw original (max 1024px wide for performance)
+      const MAX = 1024;
+      let w = img.width, h = img.height;
+      if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
+      if (h > MAX) { w = Math.round(w * MAX / h); h = MAX; }
+
+      const offscreen = document.createElement('canvas');
+      offscreen.width = w; offscreen.height = h;
+      const ctx = offscreen.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      srcImageData = ctx.getImageData(0, 0, w, h);
+
+      // Show original panel
+      const cvOrig = document.getElementById('cvOriginal');
+      cvOrig.width = w; cvOrig.height = h;
+      cvOrig.getContext('2d').putImageData(srcImageData, 0, 0);
+      document.getElementById('emptyOriginal').style.display = 'none';
+      cvOrig.style.display = 'block';
+
+      document.getElementById('processBtn').disabled = false;
+      process();
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+// ──────────────────────────────────────────────────────────
+// Normal Map Generation
+// ──────────────────────────────────────────────────────────
+function boxBlur(gray, w, h, r) {
+  if (r === 0) return gray;
+  const tmp = new Float32Array(w * h);
+  // horizontal
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let s = 0, n = 0;
+      for (let dx = -r; dx <= r; dx++) {
+        const nx = Math.max(0, Math.min(w-1, x+dx));
+        s += gray[y*w + nx]; n++;
+      }
+      tmp[y*w+x] = s/n;
+    }
+  }
+  const out = new Float32Array(w * h);
+  // vertical
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let s = 0, n = 0;
+      for (let dy = -r; dy <= r; dy++) {
+        const ny = Math.max(0, Math.min(h-1, y+dy));
+        s += tmp[ny*w+x]; n++;
+      }
+      out[y*w+x] = s/n;
+    }
+  }
+  return out;
+}
+
+function generateNormalMap(imageData, strength, blurRadius) {
+  const { width: w, height: h, data } = imageData;
+  const output = new ImageData(w, h);
+
+  // Grayscale
+  let gray = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    gray[i] = (data[i*4]*0.299 + data[i*4+1]*0.587 + data[i*4+2]*0.114) / 255;
+  }
+
+  // Optional blur (reduces noise)
+  gray = boxBlur(gray, w, h, blurRadius);
+
+  // Sobel
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const x0 = Math.max(0, x-1), x1 = Math.min(w-1, x+1);
+      const y0 = Math.max(0, y-1), y1 = Math.min(h-1, y+1);
+
+      const tl = gray[y0*w+x0], t = gray[y0*w+x], tr = gray[y0*w+x1];
+      const ml = gray[y *w+x0],                    mr = gray[y *w+x1];
+      const bl = gray[y1*w+x0], b = gray[y1*w+x], br = gray[y1*w+x1];
+
+      const gx = (-tl - 2*ml - bl + tr + 2*mr + br) * strength;
+      const gy = (-tl - 2*t  - tr + bl + 2*b  + br) * strength;
+
+      const len = Math.sqrt(gx*gx + gy*gy + 1);
+      const nx = -gx / len;
+      const ny = -gy / len;
+      const nz = 1  / len;
+
+      const idx = (y*w + x)*4;
+      output.data[idx]   = Math.round((nx+1)/2 * 255);
+      output.data[idx+1] = Math.round((ny+1)/2 * 255);
+      output.data[idx+2] = Math.round(nz * 255);
+      output.data[idx+3] = 255;
+    }
+  }
+  return output;
+}
+
+// ──────────────────────────────────────────────────────────
+// Relighting
+// ──────────────────────────────────────────────────────────
+function hexToRgb(hex) {
+  const v = parseInt(hex.slice(1), 16);
+  return [(v>>16)&255, (v>>8)&255, v&255];
+}
+
+function relightImage(origData, nmData, ld, params) {
+  const { w, h, ambient, diffuse, specular, shininess, lightRgb, ambRgb } = params;
+  const output = new ImageData(w, h);
+
+  // Normalized light dir
+  const lx = ld.x, ly = ld.y, lz = ld.z;
+  // View dir (ortho, looking down -Z)
+  const vx = 0, vy = 0, vz = 1;
+  // Half vector for Blinn-Phong
+  const hxr = lx + vx, hyr = ly + vy, hzr = lz + vz;
+  const hlen = Math.sqrt(hxr*hxr + hyr*hyr + hzr*hzr);
+  const hx = hxr/hlen, hy = hyr/hlen, hz = hzr/hlen;
+
+  for (let i = 0; i < w*h; i++) {
+    const idx = i*4;
+
+    // Decode normal (OpenGL convention: R=+X right, G=+Y up)
+    const nx =  nmData.data[idx]   / 127.5 - 1.0;
+    const ny = -(nmData.data[idx+1]/ 127.5 - 1.0); // flip Y for screen coords
+    const nz =  nmData.data[idx+2] / 255.0;
+
+    const diffFactor = Math.max(0, nx*lx + ny*ly + nz*lz);
+    const specFactor = specular * Math.pow(Math.max(0, nx*hx + ny*hy + nz*hz), shininess);
+
+    const r0 = origData.data[idx]  / 255;
+    const g0 = origData.data[idx+1]/ 255;
+    const b0 = origData.data[idx+2]/ 255;
+
+    const lr = lightRgb[0]/255, lg = lightRgb[1]/255, lb = lightRgb[2]/255;
+    const ar = ambRgb[0]/255,   ag = ambRgb[1]/255,   ab = ambRgb[2]/255;
+
+    const finalR = r0*(ambient*ar + diffuse*diffFactor*lr) + specFactor*lr;
+    const finalG = g0*(ambient*ag + diffuse*diffFactor*lg) + specFactor*lg;
+    const finalB = b0*(ambient*ab + diffuse*diffFactor*lb) + specFactor*lb;
+
+    output.data[idx]   = Math.min(255, Math.round(finalR * 255));
+    output.data[idx+1] = Math.min(255, Math.round(finalG * 255));
+    output.data[idx+2] = Math.min(255, Math.round(finalB * 255));
+    output.data[idx+3] = 255;
+  }
+  return output;
+}
+
+// ──────────────────────────────────────────────────────────
+// Main process pipeline
+// ──────────────────────────────────────────────────────────
+function getParams() {
+  return {
+    nmStrength: parseFloat(document.getElementById('nmStrength').value),
+    nmBlur:     parseInt(document.getElementById('nmBlur').value),
+    ambient:    parseFloat(document.getElementById('ambient').value),
+    diffuse:    parseFloat(document.getElementById('diffuse').value),
+    specular:   parseFloat(document.getElementById('specular').value),
+    shininess:  parseFloat(document.getElementById('shininess').value),
+    lightRgb:   hexToRgb(document.getElementById('lightColor').value),
+    ambRgb:     hexToRgb(document.getElementById('ambientColor').value),
+  };
+}
+
+function process() {
+  if (!srcImageData) return;
+  const p = getParams();
+  const w = srcImageData.width, h = srcImageData.height;
+
+  // Normal map
+  normalMapData = generateNormalMap(srcImageData, p.nmStrength, p.nmBlur);
+  const cvNorm = document.getElementById('cvNormal');
+  cvNorm.width = w; cvNorm.height = h;
+  cvNorm.getContext('2d').putImageData(normalMapData, 0, 0);
+  document.getElementById('emptyNormal').style.display = 'none';
+  cvNorm.style.display = 'block';
+
+  // Save link
+  document.getElementById('dlNormal').href = cvNorm.toDataURL('image/png');
+
+  relight();
+}
+
+function relight() {
+  if (!srcImageData || !normalMapData) return;
+  const p = getParams();
+  const w = srcImageData.width, h = srcImageData.height;
+
+  const relitData = relightImage(srcImageData, normalMapData, lightDir, { w, h, ...p });
+  const cvRelit = document.getElementById('cvRelit');
+  cvRelit.width = w; cvRelit.height = h;
+  cvRelit.getContext('2d').putImageData(relitData, 0, 0);
+  document.getElementById('emptyRelit').style.display = 'none';
+  cvRelit.style.display = 'block';
+
+  document.getElementById('dlRelit').href = cvRelit.toDataURL('image/png');
+}
+
+// Debounce for sliders
+let relightTimer = null;
+function scheduleRelight() {
+  clearTimeout(relightTimer);
+  relightTimer = setTimeout(relight, 30);
+}
+
+let processTimer = null;
+function scheduleProcess() {
+  clearTimeout(processTimer);
+  processTimer = setTimeout(process, 60);
+}
+
+// ──────────────────────────────────────────────────────────
+// Controls wiring
+// ──────────────────────────────────────────────────────────
+function bindSlider(id, displayId, decimals, onchange) {
+  const el = document.getElementById(id);
+  const disp = document.getElementById(displayId);
+  el.addEventListener('input', () => {
+    disp.textContent = parseFloat(el.value).toFixed(decimals);
+    onchange();
+  });
+}
+
+bindSlider('nmStrength', 'nmStrengthVal', 1, scheduleProcess);
+bindSlider('nmBlur',     'nmBlurVal',     0, scheduleProcess);
+bindSlider('ambient',    'ambientVal',    2, scheduleRelight);
+bindSlider('diffuse',    'diffuseVal',    2, scheduleRelight);
+bindSlider('specular',   'specularVal',   2, scheduleRelight);
+bindSlider('shininess',  'shininessVal',  0, scheduleRelight);
+
+document.getElementById('lightColor').addEventListener('input', scheduleRelight);
+document.getElementById('ambientColor').addEventListener('input', scheduleRelight);
+
+document.getElementById('processBtn').addEventListener('click', process);
+
+document.getElementById('resetBtn').addEventListener('click', () => {
+  document.getElementById('nmStrength').value = 4.0;
+  document.getElementById('nmStrengthVal').textContent = '4.0';
+  document.getElementById('nmBlur').value = 0;
+  document.getElementById('nmBlurVal').textContent = '0';
+  document.getElementById('ambient').value = 0.15;
+  document.getElementById('ambientVal').textContent = '0.15';
+  document.getElementById('diffuse').value = 0.85;
+  document.getElementById('diffuseVal').textContent = '0.85';
+  document.getElementById('specular').value = 0.30;
+  document.getElementById('specularVal').textContent = '0.30';
+  document.getElementById('shininess').value = 32;
+  document.getElementById('shininessVal').textContent = '32';
+  document.getElementById('lightColor').value = '#ffffff';
+  document.getElementById('ambientColor').value = '#1a2040';
+  lightDir = { x: 0.3, y: -0.5, z: 0.8 };
+  normalizeLightDir();
+  drawSphere();
+  if (srcImageData) process();
+});
+
+// ──────────────────────────────────────────────────────────
+// Tab / view switching
+// ──────────────────────────────────────────────────────────
+const panelMap = {
+  original:  'panelOriginal',
+  normalmap: 'panelNormal',
+  relit:     'panelRelit',
+};
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    const view = tab.dataset.view;
+    const panels = document.getElementById('panels');
+    if (view === 'split') {
+      panels.classList.remove('single');
+      Object.values(panelMap).forEach(id => {
+        const p = document.getElementById(id);
+        p.classList.remove('active-panel');
+      });
+    } else {
+      panels.classList.add('single');
+      Object.entries(panelMap).forEach(([key, id]) => {
+        const p = document.getElementById(id);
+        if (key === view) p.classList.add('active-panel');
+        else p.classList.remove('active-panel');
+      });
+    }
+  });
+});
+</script>
+</body>
+</html>
